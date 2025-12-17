@@ -1,57 +1,66 @@
-import csv, random
+import pickle
+from sklearn.model_selection import train_test_split
+from naive_bayes import train, predict
+from data_loader import doc_file_csv
 
-ham_templates = [
-    "Hôm nay {action} {time}",
-    "Bạn {action} {time} không?",
-    "Đừng quên {action} {time}",
-    "Nhớ {action} nhé",
-    "{greeting}, {action} {time}"
-]
 
-spam_templates = [
-    "{action} ngay để nhận {gift}",
-    "Khuyến mãi {discount}, {action} ngay",
-    "Bạn đã trúng {gift}, {action} ngay",
-    "{action} để nhận {gift} miễn phí",
-    "Cơ hội {action} {gift}, đừng bỏ lỡ"
-]
+def train_and_save(
+    csv_path="sms_spam_vi.csv",
+    model_path="model.pkl"
+):
+    # ===========================
+    # 1. Load dữ liệu
+    # ===========================
+    print("[INFO] Đang đọc dữ liệu...")
+    data = doc_file_csv(csv_path)   # Trả về list [(label, text), ...]
 
-ham_actions = ["đi học", "đi ăn trưa", "nộp bài tập", "học nhóm", "họp online"]
-ham_times = ["lúc 8h", "hôm nay", "cuối tuần", "sáng mai", "chiều nay"]
-ham_greetings = ["Chào bạn", "Hi", "Xin chào", "Hey", "Hello"]
+    print(f"[INFO] Tổng số mẫu: {len(data)}")
 
-spam_actions = ["Click vào đây", "Đăng ký", "Nhanh tay", "Nhấn vào link", "Mua ngay"]
-spam_gifts = ["iPhone 15", "voucher 100k", "thẻ cào miễn phí", "ưu đãi 50%", "phần mềm bản quyền"]
-spam_discounts = ["50%", "70%", "30%", "ưu đãi đặc biệt", "giảm giá sốc"]
-
-data = []
-
-# Tạo 350 ham
-for _ in range(350):
-    template = random.choice(ham_templates)
-    text = template.format(
-        action=random.choice(ham_actions),
-        time=random.choice(ham_times),
-        greeting=random.choice(ham_greetings)
+    # ===========================
+    # 2. Chia train/test 70/30
+    # ===========================
+    train_data, test_data = train_test_split(
+        data, test_size=0.3, random_state=42
     )
-    data.append(['ham', text])
 
-# Tạo 150 spam
-for _ in range(150):
-    template = random.choice(spam_templates)
-    text = template.format(
-        action=random.choice(spam_actions),
-        gift=random.choice(spam_gifts),
-        discount=random.choice(spam_discounts)
-    )
-    data.append(['spam', text])
+    print(f"[INFO] Train: {len(train_data)} mẫu")
+    print(f"[INFO] Test : {len(test_data)} mẫu")
 
-random.shuffle(data)
+    # ===========================
+    # 3. Train mô hình Naive Bayes
+    # ===========================
+    print("[INFO] Đang train mô hình Naive Bayes...")
+    word_counts, class_counts, vocab = train(train_data)
 
-# Ghi ra file CSV
-with open('sms_spam_vi.csv', 'w', newline='', encoding='utf-8') as f:
-    writer = csv.writer(f)
-    writer.writerow(['label', 'text'])
-    writer.writerows(data)
+    # ===========================
+    # 4. Đánh giá nhanh
+    # ===========================
+    correct = 0
+    for label, text in test_data:
+        pred = predict(text, word_counts, class_counts, vocab)
+        if pred == label:
+            correct += 1
 
-print("Đã tạo file sms_spam_vi.csv với dữ liệu phong phú hơn.")
+    accuracy = correct / len(test_data) * 100
+    print(f"[INFO] Accuracy: {accuracy:.2f}%")
+
+    # ===========================
+    # 5. Lưu mô hình
+    # ===========================
+    print(f"[INFO] Đang lưu mô hình vào {model_path} ...")
+    model_data = {
+        "word_counts": word_counts,
+        "class_counts": class_counts,
+        "vocab": vocab
+    }
+
+    with open(model_path, "wb") as f:
+        pickle.dump(model_data, f)
+
+    print("[INFO] ✔ Lưu thành công!")
+    print("[INFO] File tạo ra:")
+    print(f"       → {model_path}")
+
+
+if __name__ == "__main__":
+    train_and_save()

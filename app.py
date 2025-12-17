@@ -1,71 +1,104 @@
-import tkinter as tk
-from tkinter import scrolledtext
-from sklearn.model_selection import train_test_split
+import streamlit as st
+import pickle
+import pdfplumber
+from docx import Document
 
-from naive_bayes import train, predict
-from data_loader import doc_file_csv
-
-# ===============================
-# Train model (70% train – 30% test)
-# ===============================
-def train_model():
-    data = doc_file_csv("sms_spam_vi.csv")
-
-    train_data, test_data = train_test_split(data, test_size=0.3, random_state=42)
-
-    word_counts, class_counts, vocab = train(train_data)
-
-    correct = 0
-    for label, text in test_data:
-        pred = predict(text, word_counts, class_counts, vocab)
-        if pred == label:
-            correct += 1
-
-    accuracy = 100 * correct / len(test_data)
-    print(f"[INFO] Accuracy (Test 30%): {accuracy:.2f}%")
-
-    return word_counts, class_counts, vocab
+from naive_bayes import predict   # dùng predict tự xây dựng
 
 
-# ========== TRAIN KHI CHẠY ==========
-word_counts, class_counts, vocab = train_model()
+# ==========================
+# 📌 Load model đã lưu
+# ==========================
+with open("model.pkl", "rb") as f:
+    model_data = pickle.load(f)
+
+word_counts = model_data["word_counts"]
+class_counts = model_data["class_counts"]
+vocab = model_data["vocab"]
 
 
-# ===============================
-# APP GUI
-# ===============================
-def classify_message():
-    message = input_box.get("1.0", tk.END).strip()
+# ==========================
+# 📌 Đọc file TXT
+# ==========================
+def read_txt(file):
+    return file.read().decode("utf-8", errors="ignore")
 
-    if not message:
-        result_label.config(text="Vui lòng nhập nội dung để phân loại!", fg="red")
-        return
 
-    prediction = predict(message, word_counts, class_counts, vocab)
+# ==========================
+# 📌 Đọc file DOCX
+# ==========================
+def read_docx(file):
+    doc = Document(file)
+    full_text = [p.text for p in doc.paragraphs]
+    return "\n".join(full_text)
 
-    if prediction == "spam":
-        result_label.config(text="KẾT QUẢ: THƯ RÁC (SPAM)", fg="red")
+
+# ==========================
+# 📌 Đọc file PDF
+# ==========================
+def read_pdf(file):
+    text = ""
+    with pdfplumber.open(file) as pdf:
+        for page in pdf.pages:
+            if page.extract_text():
+                text += page.extract_text() + "\n"
+    return text
+
+
+# ==========================
+# 📌 Dự đoán
+# ==========================
+def classify(message):
+    label = predict(message, word_counts, class_counts, vocab)
+    return label
+
+
+# ==========================
+# 📌 Giao diện Streamlit
+# ==========================
+st.set_page_config(page_title="Spam Classifier", page_icon="📩")
+
+st.title("📧 Naive Bayes Spam Classification")
+st.write("Upload file văn bản hoặc nhập text để phân loại Spam / Ham")
+
+uploaded_file = st.file_uploader(
+    "Chọn file cần phân loại",
+    type=["txt", "pdf", "docx"]
+)
+
+text_content = ""
+
+# Nếu tải file
+if uploaded_file:
+    file_type = uploaded_file.name.split(".")[-1]
+
+    if file_type == "txt":
+        text_content = read_txt(uploaded_file)
+
+    elif file_type == "docx":
+        text_content = read_docx(uploaded_file)
+
+    elif file_type == "pdf":
+        text_content = read_pdf(uploaded_file)
+
     else:
-        result_label.config(text="KẾT QUẢ: TIN THƯỜNG (HAM)", fg="green")
+        st.error("❌ Định dạng không hỗ trợ.")
+        st.stop()
+
+# Ô nhập text thủ công
+st.subheader("✍ Nhập nội dung hoặc xem nội dung file tải lên:")
+input_text = st.text_area("Nội dung:", text_content, height=250)
 
 
-# ===============================
-# Giao diện Tkinter
-# ===============================
-window = tk.Tk()
-window.title("Phân loại thư rác – Naive Bayes")
-window.geometry("600x450")
+# Nút phân loại
+if st.button("🔍 Phân loại"):
+    if not input_text.strip():
+        st.error("⚠ Vui lòng nhập nội dung hoặc tải file!")
+    else:
+        label = classify(input_text)
 
-title_label = tk.Label(window, text="Bộ phân loại thư rác (Naive Bayes)", font=("Arial", 16, "bold"))
-title_label.pack(pady=10)
-
-input_box = scrolledtext.ScrolledText(window, wrap=tk.WORD, width=60, height=10, font=("Arial", 12))
-input_box.pack(pady=10)
-
-predict_btn = tk.Button(window, text="Phân loại", font=("Arial", 14), width=20, command=classify_message)
-predict_btn.pack(pady=10)
-
-result_label = tk.Label(window, text="", font=("Arial", 16))
-result_label.pack(pady=10)
-
-window.mainloop()
+        st.subheader("📌 Kết quả phân loại:")
+        if label == "spam":
+            st.error("🚨 SPAM – Thư rác")
+        else:
+            st.success("✅ HAM – Thư bình thường")
