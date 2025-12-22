@@ -2,12 +2,14 @@ import pickle
 import re
 from collections import Counter
 from sklearn.model_selection import train_test_split
-from naive_bayes import train, predict
-from data_loader import doc_file_csv
+from pyvi import ViTokenizer  # <--- THƯ VIỆN QUAN TRỌNG
 
+# Import các file của bạn (giữ nguyên)
+from naive_bayes import train, predict
+from data_loader import doc_file_csv 
 
 # ===========================
-# Tiền xử lý văn bản
+# Tiền xử lý văn bản (Đã nâng cấp)
 # ===========================
 def clean_text(text):
     # Ép về string, xử lý NaN
@@ -17,9 +19,16 @@ def clean_text(text):
     if not isinstance(text, str):
         text = str(text)
 
+    # 1. Chuyển về chữ thường
     text = text.lower()
+    
+    # 2. Xóa URL
     text = re.sub(r"http\S+", " ", text)
+    
+    # 3. Xóa số (Tùy chọn, ở đây mình giữ nguyên logic cũ của bạn là xóa)
     text = re.sub(r"\d+", " ", text)
+    
+    # 4. Xóa ký tự đặc biệt
     text = re.sub(
         r"[^\w\sàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễ"
         r"ìíịỉĩòóọỏõôồốộổỗơờớợởỡ"
@@ -27,7 +36,14 @@ def clean_text(text):
         " ",
         text
     )
+    
+    # 5. Xóa khoảng trắng thừa
     text = re.sub(r"\s+", " ", text).strip()
+    
+    # 6. TÁCH TỪ TIẾNG VIỆT (QUAN TRỌNG NHẤT)
+    # Biến "sinh viên" thành "sinh_viên"
+    text = ViTokenizer.tokenize(text)
+    
     return text
 
 
@@ -36,22 +52,28 @@ def train_and_save(
     model_path="model.pkl"
 ):
     print("[INFO] Đang đọc dữ liệu...")
-    raw_data = doc_file_csv(csv_path)
+    try:
+        raw_data = doc_file_csv(csv_path)
+    except Exception as e:
+        print(f"[LOI] Khong doc duoc file CSV: {e}")
+        return
 
     # ===========================
     # Clean + giới hạn độ dài
     # ===========================
     data = []
+    print("[INFO] Đang xử lý và tách từ tiếng Việt...")
+    
     for label, text in raw_data:
-        text = clean_text(text)
+        text = clean_text(text) # <--- Hàm này giờ đã có tách từ
 
-        # ⚠ Giới hạn độ dài để tránh bias
+        # Giới hạn độ dài để tránh bias
         words = text.split()
         if len(words) < 3:
             continue
 
-        if len(words) > 200:
-            text = " ".join(words[:200])
+        if len(words) > 300: # Tăng lên chút vì từ ghép sẽ làm câu ngắn lại
+            text = " ".join(words[:300])
 
         data.append((label, text))
 
@@ -69,11 +91,13 @@ def train_and_save(
     # ===========================
     # Train Naive Bayes
     # ===========================
+    print("[INFO] Đang training...")
     word_counts, class_counts, vocab = train(train_data)
 
     # ===========================
     # Đánh giá
     # ===========================
+    print("[INFO] Đang kiểm tra độ chính xác...")
     correct = 0
     for label, text in test_data:
         if predict(text, word_counts, class_counts, vocab) == label:
@@ -96,5 +120,6 @@ def train_and_save(
         )
 
     print(f"[INFO] ✔ Model đã lưu: {model_path}")
+
 if __name__ == "__main__":
     train_and_save()
